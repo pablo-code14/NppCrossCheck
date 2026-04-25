@@ -412,4 +412,6 @@ void compareLists()
 
     writeTextIntoCurrentScintilla(sci, formatSectionHeaderSingle("   LIST 2 ONLY", list2Only.size()));
     writeTextArrayIntoCurrentScintilla_lineByLine(sci, list2Only, false);
+
+    writeTextIntoCurrentScintilla(sci, ""); //Extra empty line at the end
 }

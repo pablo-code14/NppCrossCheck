@@ -15,6 +15,7 @@ vs.proj/NppCrossCheck.exp
 vs.proj/NppCrossCheck.lib
 vs.proj/NppCrossCheck.vcxproj.user
 vs.proj/.vs/
+vs.proj/NppCrossCheck
 *.aps
 *.zip
 *.bak
