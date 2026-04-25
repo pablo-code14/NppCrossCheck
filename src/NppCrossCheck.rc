@@ -15,8 +15,8 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,1,0,0
- PRODUCTVERSION 1,1,0,0
+ FILEVERSION 1,2,0,0
+ PRODUCTVERSION 1,2,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -32,12 +32,12 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "FileDescription", "Notepad++ Plugin NppCrossCheck"
-            VALUE "FileVersion", "1.1.0.0"
+            VALUE "FileVersion", "1.2.0.0"
             VALUE "InternalName", "NppCrossCheck.dll"
             VALUE "LegalCopyright", "Copyright 2026 by Pablo Lopez"
             VALUE "OriginalFilename", "NppCrossCheck.dll"
             VALUE "ProductName", "NppCrossCheck"
-            VALUE "ProductVersion", "1.1.0.0"
+            VALUE "ProductVersion", "1.2.0.0"
         END
     END
     BLOCK "VarFileInfo"
