@@ -97,9 +97,19 @@ Hong Kong
 
 ## Installation
 
-The plugin is currently pending official approval and will soon be available in the Notepad++ Plugin Admin.
+Available in the _Plugin Admin_ from the Notepad++ version v8.9.3 (Released on the 24th of March, 2026)
 
-### Manual Installation
+Instructions (English):
+1. In the Menu Bar, go to _Plugins_ → _Plugins Admin..._
+2. Search and select "NppCrossCheck"
+3. Install
+
+Intrucciones (Español):
+1. En la barra de menús, ve a _Complementos_ → _Administrar Complementos..._
+2. Busca y selecciona "NppCrossCheck"
+3. Instalar
+
+### Manual Installation (on a Npp portable version)
 
 1. Download the `NppCrossCheck_XYZ.zip` file from the latest release:  
    https://github.com/pablo-code14/NppCrossCheck/releases
