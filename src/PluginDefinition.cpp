@@ -1,4 +1,4 @@
-﻿//this file is part of notepad++
+﻿//thisfileispartofnotepad++
 //Copyright (C)2022 Don HO <don.h@free.fr>
 //
 //This program is free software; you can redistribute it and/or
@@ -28,9 +28,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <Shlwapi.h>
 
 std::string newLine = "\r\n";
-const std::string comment_tag = "//";
 //
 // The plugin data that Notepad++ needs
 //
@@ -40,6 +40,11 @@ FuncItem funcItem[nbFunc];
 // The data of Notepad++ that you can use in your plugin commands
 //
 NppData nppData;
+
+Param param;
+typedef std::basic_string<TCHAR> generic_string;
+generic_string confPath;
+bool atLeastOneCommentTagFound = false;
 
 namespace {
 
@@ -149,7 +154,7 @@ std::string formatTwoCountLine(int count1, int count2, const std::string& item, 
 std::string formatSectionHeaderCommon(size_t count)
 {
     std::ostringstream oss;
-    oss << "\r\n\r\n=====================\r\n"
+    oss << "=====================\r\n"
         << "     COMMON (" << count << ')'
         << "\r\n====================="
         << "\r\n L1  L2"
@@ -204,6 +209,7 @@ void commandMenuInit()
     shKey->_key = 0x4C; // VK_L
 
     setCommand(0, TEXT("CrossCheck"), compareLists, shKey, false);
+    setCommand(1, TEXT("---"), NULL, NULL, false);
 }
 
 //
@@ -236,6 +242,91 @@ bool setCommand(size_t index, TCHAR* cmdName, PFUNCPLUGINCMD pFunc, ShortcutKey*
 //----------------------------------------------//
 //--         ASSOCIATED FUNCTIONS             --//
 //----------------------------------------------//
+const TCHAR* pluginConfName = TEXT("NppCrossCheck.ini");
+const TCHAR* ConfigSectionName = TEXT("config");
+const TCHAR* commentTag = TEXT("commentTag");
+//
+// This function is a modified copy of NppPluginConverted by Don HO, which is part of the Notepad++ source code.
+//
+void getCmdsFromConf(const TCHAR* confPathVal, Param& paramVal)
+{
+	// Get the section names from the configuration file
+    TCHAR cmdNames[MAX_PATH];
+    ::GetPrivateProfileSectionNames(cmdNames, MAX_PATH, confPathVal);
+	TCHAR* pFn = cmdNames; // first section name
+
+    paramVal.commentTag.clear();
+
+    TCHAR valueBuffer[MAX_PATH] = { 0 };
+    const DWORD chars = ::GetPrivateProfileString(pFn, commentTag, TEXT(""), valueBuffer, MAX_PATH, confPathVal);
+
+    if (chars > 0) {
+#ifdef UNICODE
+        // wchar_t* to UTF-8 std::string
+        int required = WideCharToMultiByte(CP_UTF8, 0, valueBuffer, -1, NULL, 0, NULL, NULL);
+        if (required > 0) {
+            std::string tmp;
+            tmp.resize(static_cast<size_t>(required));
+            WideCharToMultiByte(CP_UTF8, 0, valueBuffer, -1, &tmp[0], required, NULL, NULL);
+			// delete the last null terminator if present
+            if (!tmp.empty() && tmp.back() == '\0') tmp.pop_back();
+            paramVal.commentTag = tmp;
+        }
+#else
+        // ANSI build: valueBuffer is already char*
+        paramVal.commentTag = std::string(valueBuffer);
+#endif
+    }
+    else
+    {
+		paramVal.commentTag = std::string(); // default to empty string if not found
+    }
+
+}
+
+//
+// This function is a modified copy of NppPluginConverted by Don HO, which is part of the Notepad++ source code.
+//
+// // if conf file does not exist, then create it and load it.
+void loadConfFile()
+{
+    TCHAR confDir[MAX_PATH];
+    ::SendMessage(nppData._nppHandle, NPPM_GETPLUGINSCONFIGDIR, MAX_PATH, (LPARAM)confDir);
+    confPath = confDir;
+    confPath += TEXT("\\");
+    confPath += pluginConfName;
+
+    const char confContent[] = "\
+; This section contains the configurable parameters \n\
+; If you modify directly this file, please restart your Notepad++ to take effect.\n\
+; * commentTag: Comment Identifier. Leave it empty to not consider comments\n\
+[config]\n\
+commentTag=//\n\
+\n";
+
+    if (!::PathFileExists(confPath.c_str()))
+    {
+        FILE* f = generic_fopen(confPath.c_str(), TEXT("w"));
+        if (f)
+        {
+            fwrite(confContent, sizeof(confContent[0]), strlen(confContent), f);
+            fflush(f);
+            fclose(f);
+        }
+        /*
+        else
+        {
+            generic_string msg = confPath;
+            msg += TEXT(" is absent, and this file cannot be create.");
+            ::MessageBox(nppData._nppHandle, msg.c_str(), TEXT("Not present"), MB_OK);
+        }
+        */
+    }
+    getCmdsFromConf(confPath.c_str(), param);
+}
+
+
+
 void showDebugMessage_str(std::string str)
 {
     const int wlen = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, NULL, 0);
@@ -289,6 +380,7 @@ void writeFileContentIntoCurrentScintilla_lineByLine(HWND scintilla, const std::
     ::SendMessage(scintilla, SCI_SETSEL, static_cast<WPARAM>(-1), static_cast<LPARAM>(-1));
     ::SendMessage(scintilla, SCI_ENDUNDOACTION, 0, 0);
 }
+
 
 void writeTextIntoCurrentScintilla(HWND scintilla, const std::string& text)
 {
@@ -348,15 +440,18 @@ std::vector<std::string> readNonEmptyBlock(HWND sci, size_t& line_no, size_t lin
 }
 
 void splitItemAndComment(const std::string& item, std::string& content, std::string& comment) {
-    std::size_t commentPos = item.find(comment_tag);
-    if (commentPos != std::string::npos) {
-        content = item.substr(0, commentPos);
-		content = trimRight(content);
-        comment = item.substr(commentPos);
-    }
-    else {
-        content = item;
-        comment = "";
+    if (!param.commentTag.empty()) {
+        std::size_t commentPos = item.find(param.commentTag);
+        if (commentPos != std::string::npos) {
+            content = item.substr(0, commentPos);
+            content = trimRight(content);
+            comment = item.substr(commentPos);
+            atLeastOneCommentTagFound = true;
+        }
+        else {
+            content = item;
+			comment = std::string();
+        }
     }
 }
 
@@ -388,8 +483,9 @@ void compareLists()
         if (stats.displayItem.empty())
             stats.displayItem = content;
         ++stats.appearancesInList1;
-        if (!comment.empty())
-			stats.comments.push_back(comment);
+        if (!comment.empty()) {
+            stats.comments.push_back(comment);
+        }
 		list1_withoutComments.push_back(content);
     }
     //  - Add the items from list 2
@@ -401,8 +497,9 @@ void compareLists()
         if (stats.displayItem.empty())
             stats.displayItem = content;
         ++stats.appearancesInList2;
-        if (!comment.empty())
+        if (!comment.empty()) {
             stats.comments.push_back(comment);
+        }
         list2_withoutComments.push_back(content);
     }
 
@@ -447,6 +544,11 @@ void compareLists()
             listCommon.push_back(formatTwoCountLine(stats.appearancesInList1, stats.appearancesInList2, stats.displayItem, stats.comments));
     }
 
+    writeTextIntoCurrentScintilla(sci, newLine); //Empty line
+
+    if (atLeastOneCommentTagFound == true) {
+        writeTextIntoCurrentScintilla(sci, "Info: Content after \"" + param.commentTag + "\"" + " is treated as a comment and is not included in the cross-check validations."); // Info line about comment tag
+    }
     writeTextIntoCurrentScintilla(sci, formatSectionHeaderCommon(listCommon.size()));
     writeTextArrayIntoCurrentScintilla_lineByLine(sci, listCommon, false);
 
