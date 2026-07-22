@@ -18,6 +18,7 @@
 #include "PluginDefinition.h"
 #include "menuCmdID.h"
 #include "Scintilla.h"
+#include "Version.h"
 
 #include <algorithm>
 #include <cctype>
@@ -210,6 +211,8 @@ void commandMenuInit()
 
     setCommand(0, TEXT("CrossCheck"), compareLists, shKey, false);
     setCommand(1, TEXT("---"), NULL, NULL, false);
+    setCommand(2, TEXT("Edit Configuration File"), editConf, NULL, false);
+    setCommand(3, TEXT("About"), about, NULL, false);
 }
 
 //
@@ -325,7 +328,26 @@ commentTag=//\n\
     getCmdsFromConf(confPath.c_str(), param);
 }
 
+void about()
+{
+    generic_string aboutMsg = TEXT("Version: ");
+    aboutMsg += TEXT(VERSION_VALUE);
+    aboutMsg += TEXT("\r\r");
+    aboutMsg += TEXT("License: GPL\r\r");
+    aboutMsg += TEXT("Author: Pablo Lopez <pablo-code14@hotmail.com>\r");
+    ::MessageBox(nppData._nppHandle, aboutMsg.c_str(), TEXT("NppCrossCheck"), MB_OK);
+}
 
+void editConf()
+{
+    if (!::PathFileExists(confPath.c_str()))
+    {
+        generic_string msg = confPath + TEXT(" is not present.\rPlease create this file manually.");
+        ::MessageBox(nppData._nppHandle, msg.c_str(), TEXT("Configuration file is absent"), MB_OK);
+        return;
+    }
+    ::SendMessage(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)confPath.c_str());
+}
 
 void showDebugMessage_str(std::string str)
 {
@@ -465,11 +487,11 @@ void compareLists()
     const size_t lineCount = static_cast<size_t>(::SendMessage(sci, SCI_GETLINECOUNT, 0, 0));
     size_t line_no = 0;
 
+    atLeastOneCommentTagFound = false;
+
     // Build the lists defined by the user
     const std::vector<std::string> list1 = readNonEmptyBlock(sci, line_no, lineCount);
     const std::vector<std::string> list2 = readNonEmptyBlock(sci, line_no, lineCount);
-
-
 
 	//  Build a map of all items with their stats (number of appearances in each list) //
     std::unordered_map<std::string, ItemStats> itemsTable;
@@ -548,12 +570,12 @@ void compareLists()
             listCommon.push_back(formatTwoCountLine(stats.appearancesInList1, stats.appearancesInList2, stats.displayItem, stats.comments));
     }
 
-    loadConfFile();
 
     writeTextIntoCurrentScintilla(sci, newLine); //Empty line
 
     if (atLeastOneCommentTagFound == true) {
-        writeTextIntoCurrentScintilla(sci, "Info: Content after \"" + param.commentTag + "\"" + " is treated as a comment and is not included in the cross-check validations."); // Info line about comment tag
+        writeTextIntoCurrentScintilla(sci, "- Info: Content after \"" + param.commentTag + "\"" + " is treated as a comment and is not included in the cross-check validations." + newLine + 
+        "        Plugins > NppCrossCheck > Edit Configuration File"); // Info line about comment tag
     }
     writeTextIntoCurrentScintilla(sci, formatSectionHeaderCommon(listCommon.size()));
     writeTextArrayIntoCurrentScintilla_lineByLine(sci, listCommon, false);

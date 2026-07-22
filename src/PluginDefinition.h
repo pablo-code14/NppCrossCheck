@@ -37,7 +37,7 @@ const TCHAR NPP_PLUGIN_NAME[] = TEXT("NppCrossCheck");
 //
 // Here define the number of your plugin commands
 //
-const int nbFunc = 2;
+const int nbFunc = 4;
 
 
 //
@@ -122,5 +122,6 @@ struct Param {
 void compareLists();
 void loadConfFile();
 void editConf();
+void about();
 
 #endif //PLUGINDEFINITION_H
