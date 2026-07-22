@@ -20,3 +20,5 @@ vs.proj/NppCrossCheck
 *.zip
 *.bak
 readme.FIRST
+Release files
+.vs

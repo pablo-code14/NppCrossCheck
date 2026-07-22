@@ -62,6 +62,18 @@ std::string trimRight(std::string s)
     return s;
 }
 
+std::string trimLeft(std::string s)
+{
+    while (!s.empty()) {
+        const char ch = s.front();
+        if (ch == ' ' || ch == '\t')
+            s.erase(s.begin());
+        else
+            break;
+    }
+    return s;
+}
+
 std::string toLowerCopy(const std::string& s)
 {
     std::string out = s;
@@ -142,7 +154,7 @@ std::string formatSectionHeaderCommon(size_t count)
 std::string formatSectionHeaderSingle(const std::string& title, size_t count)
 {
     std::ostringstream oss;
-    oss << "\r\n\r\n=====================\r\n"
+    oss << "\r\n=====================\r\n"
         << title << " (" << count << ')'
         << "\r\n====================="
         << "\r\n  #"
@@ -310,6 +322,7 @@ std::vector<std::string> readNonEmptyBlock(HWND sci, size_t& line_no, size_t lin
     while (line_no < lineCount) {
         readLine(sci, line_no, line);
         line = trimRight(line);
+        line = trimLeft(line);
         if (!line.empty())
             break;
         ++line_no;
@@ -318,6 +331,7 @@ std::vector<std::string> readNonEmptyBlock(HWND sci, size_t& line_no, size_t lin
     while (line_no < lineCount) {
         readLine(sci, line_no, line);
         line = trimRight(line);
+        line = trimLeft(line);
         if (line.empty())
             break;
         lines.push_back(line);
@@ -434,4 +448,6 @@ void compareLists()
 
     writeTextIntoCurrentScintilla(sci, formatSectionHeaderSingle("   LIST 2 ONLY", list2Only.size()));
     writeTextArrayIntoCurrentScintilla_lineByLine(sci, list2Only, false);
+
+    writeTextIntoCurrentScintilla(sci, ""); //Extra empty line at the end
 }
