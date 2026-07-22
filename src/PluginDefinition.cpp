@@ -453,6 +453,10 @@ void splitItemAndComment(const std::string& item, std::string& content, std::str
 			comment = std::string();
         }
     }
+    else {
+        content = item;
+        comment = std::string();
+	}
 }
 
 void compareLists()
@@ -543,6 +547,8 @@ void compareLists()
         if (stats.appearancesInList1 > 0 && stats.appearancesInList2 > 0)
             listCommon.push_back(formatTwoCountLine(stats.appearancesInList1, stats.appearancesInList2, stats.displayItem, stats.comments));
     }
+
+    loadConfFile();
 
     writeTextIntoCurrentScintilla(sci, newLine); //Empty line
 
