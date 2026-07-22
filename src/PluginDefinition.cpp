@@ -105,14 +105,17 @@ std::string formatOneCountLine(int count, const std::string& item, std::vector<s
 {
     std::ostringstream oss;
 
-    comments = comments;
+	std::string commentStr;
+	for (const std::string& comment : comments) {
+        commentStr += " " + comment;
+    }
 
     oss << "";
     if (count == 1) {
-        oss << "  " << std::setw(1) << std::setfill('0') << count << "   " << item;
+        oss << "  " << std::setw(1) << std::setfill('0') << count << "   " << item << commentStr;
     }
     else {
-        oss << " " << std::setw(2) << std::setfill('0') << count << "   " << item;
+        oss << " " << std::setw(2) << std::setfill('0') << count << "   " << item << commentStr;
     }
     return oss.str();
 }
@@ -121,7 +124,10 @@ std::string formatTwoCountLine(int count1, int count2, const std::string& item, 
 {
     std::ostringstream oss;
 
-    comments = comments;
+    std::string commentStr;
+    for (const std::string& comment : comments) {
+        commentStr += " " + comment;
+    }
 
     oss << "";
     if (count1 == 1) {
@@ -136,7 +142,7 @@ std::string formatTwoCountLine(int count1, int count2, const std::string& item, 
     else {
         oss << "  " << std::setw(2) << std::setfill('0') << count2;
     }
-    oss << "   " << item;
+    oss << "   " << item << commentStr;
     return oss.str();
 }
 
@@ -345,6 +351,7 @@ void splitItemAndComment(const std::string& item, std::string& content, std::str
     std::size_t commentPos = item.find(comment_tag);
     if (commentPos != std::string::npos) {
         content = item.substr(0, commentPos);
+		content = trimRight(content);
         comment = item.substr(commentPos);
     }
     else {
