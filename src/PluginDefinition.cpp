@@ -30,7 +30,7 @@
 #include <vector>
 
 std::string newLine = "\r\n";
-
+const std::string comment_tag = "//";
 //
 // The plugin data that Notepad++ needs
 //
@@ -45,6 +45,7 @@ namespace {
 
 struct ItemStats {
     std::string displayItem;
+    std::vector<std::string> comments;
     int appearancesInList1 = 0;
     int appearancesInList2 = 0;
 };
@@ -88,9 +89,12 @@ bool lessIgnoreCase(const std::string& a, const std::string& b)
     return a.size() < b.size();
 }
 
-std::string formatOneCountLine(int count, const std::string& item)
+std::string formatOneCountLine(int count, const std::string& item, std::vector<std::string> comments)
 {
     std::ostringstream oss;
+
+    comments = comments;
+
     oss << "";
     if (count == 1) {
         oss << "  " << std::setw(1) << std::setfill('0') << count << "   " << item;
@@ -101,9 +105,12 @@ std::string formatOneCountLine(int count, const std::string& item)
     return oss.str();
 }
 
-std::string formatTwoCountLine(int count1, int count2, const std::string& item)
+std::string formatTwoCountLine(int count1, int count2, const std::string& item, std::vector<std::string> comments)
 {
     std::ostringstream oss;
+
+    comments = comments;
+
     oss << "";
     if (count1 == 1) {
         oss << "  " << std::setw(1) << std::setfill('0') << count1;
@@ -320,50 +327,79 @@ std::vector<std::string> readNonEmptyBlock(HWND sci, size_t& line_no, size_t lin
     return lines;
 }
 
+void splitItemAndComment(const std::string& item, std::string& content, std::string& comment) {
+    std::size_t commentPos = item.find(comment_tag);
+    if (commentPos != std::string::npos) {
+        content = item.substr(0, commentPos);
+        comment = item.substr(commentPos);
+    }
+    else {
+        content = item;
+        comment = "";
+    }
+}
+
 void compareLists()
 {
     HWND sci = getCurrentScintilla();
     const size_t lineCount = static_cast<size_t>(::SendMessage(sci, SCI_GETLINECOUNT, 0, 0));
     size_t line_no = 0;
 
-    // Build the lists deined by the user
+    // Build the lists defined by the user
     const std::vector<std::string> list1 = readNonEmptyBlock(sci, line_no, lineCount);
     const std::vector<std::string> list2 = readNonEmptyBlock(sci, line_no, lineCount);
 
-	// Sort the lists
-    const std::vector<std::string> list1Sorted = sortArray(list1);
-    const std::vector<std::string> list2Sorted = sortArray(list2);
+
 
 	//  Build a map of all items with their stats (number of appearances in each list) //
     std::unordered_map<std::string, ItemStats> itemsTable;
     itemsTable.reserve(list1.size() + list2.size());
 
+    std::vector<std::string> list1_withoutComments;
+    std::vector<std::string> list2_withoutComments;
+
 	//  - Add the items from list 1
     for (const std::string& item : list1) {
-		ItemStats& stats = itemsTable[toLowerCopy(item)]; // this will default construct the stats if the item is not already in the map
+        std::string content;
+        std::string comment;
+        splitItemAndComment(item, content, comment);
+        ItemStats& stats = itemsTable[toLowerCopy(content)]; // this will default construct the stats if the item is not already in the map
         if (stats.displayItem.empty())
-            stats.displayItem = item;
+            stats.displayItem = content;
         ++stats.appearancesInList1;
+        if (!comment.empty())
+			stats.comments.push_back(comment);
+		list1_withoutComments.push_back(content);
     }
     //  - Add the items from list 2
     for (const std::string& item : list2) {
-		ItemStats& stats = itemsTable[toLowerCopy(item)]; // this will default construct the stats if the item is not already in the map
+        std::string content;
+        std::string comment;
+        splitItemAndComment(item, content, comment);
+		ItemStats& stats = itemsTable[toLowerCopy(content)]; // this will default construct the stats if the item is not already in the map
         if (stats.displayItem.empty())
-            stats.displayItem = item;
+            stats.displayItem = content;
         ++stats.appearancesInList2;
+        if (!comment.empty())
+            stats.comments.push_back(comment);
+        list2_withoutComments.push_back(content);
     }
+
+    // Sort the lists
+    const std::vector<std::string> list1ItemsSorted = sortArray(list1_withoutComments);
+    const std::vector<std::string> list2ItemsSorted = sortArray(list2_withoutComments);
 
     std::vector<std::string> orderedKeys;
     orderedKeys.reserve(itemsTable.size());
     std::unordered_set<std::string> seenKeys;
     seenKeys.reserve(itemsTable.size());
 
-    for (const std::string& item : list1Sorted) {
+    for (const std::string& item : list1ItemsSorted) {
         const std::string key = toLowerCopy(item);
         if (seenKeys.insert(key).second)
             orderedKeys.push_back(key);
     }
-    for (const std::string& item : list2Sorted) {
+    for (const std::string& item : list2ItemsSorted) {
         const std::string key = toLowerCopy(item);
         if (seenKeys.insert(key).second)
             orderedKeys.push_back(key);
@@ -381,13 +417,13 @@ void compareLists()
         const ItemStats& stats = itemsTable.at(key);
 
         if (stats.appearancesInList1 > 0 && stats.appearancesInList2 == 0)
-            list1Only.push_back(formatOneCountLine(stats.appearancesInList1, stats.displayItem));
+            list1Only.push_back(formatOneCountLine(stats.appearancesInList1, stats.displayItem, stats.comments));
 
         if (stats.appearancesInList2 > 0 && stats.appearancesInList1 == 0)
-            list2Only.push_back(formatOneCountLine(stats.appearancesInList2, stats.displayItem));
+            list2Only.push_back(formatOneCountLine(stats.appearancesInList2, stats.displayItem, stats.comments));
 
         if (stats.appearancesInList1 > 0 && stats.appearancesInList2 > 0)
-            listCommon.push_back(formatTwoCountLine(stats.appearancesInList1, stats.appearancesInList2, stats.displayItem));
+            listCommon.push_back(formatTwoCountLine(stats.appearancesInList1, stats.appearancesInList2, stats.displayItem, stats.comments));
     }
 
     writeTextIntoCurrentScintilla(sci, formatSectionHeaderCommon(listCommon.size()));
