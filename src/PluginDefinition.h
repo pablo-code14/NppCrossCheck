@@ -117,6 +117,8 @@ bool setCommand(size_t index, TCHAR *cmdName, PFUNCPLUGINCMD pFunc, ShortcutKey 
 
 struct Param {
 	std::string commentTag;
+	int showInfoMessages;
+	int omitDuplicateComments;
 };
 
 void compareLists();

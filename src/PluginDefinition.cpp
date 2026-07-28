@@ -155,7 +155,7 @@ std::string formatTwoCountLine(int count1, int count2, const std::string& item, 
 std::string formatSectionHeaderCommon(size_t count)
 {
     std::ostringstream oss;
-    oss << "=====================\r\n"
+    oss << "\r\n=====================\r\n"
         << "     COMMON (" << count << ')'
         << "\r\n====================="
         << "\r\n L1  L2"
@@ -247,7 +247,9 @@ bool setCommand(size_t index, TCHAR* cmdName, PFUNCPLUGINCMD pFunc, ShortcutKey*
 //----------------------------------------------//
 const TCHAR* pluginConfName = TEXT("NppCrossCheck.ini");
 const TCHAR* ConfigSectionName = TEXT("config");
-const TCHAR* commentTag = TEXT("commentTag");
+const TCHAR* commentTagName = TEXT("commentTag");
+const TCHAR* showInfoMessagesName = TEXT("showInfoMessages");
+const TCHAR* omitDuplicateCommentsName = TEXT("omitDuplicateComments");
 //
 // This function is a modified copy of NppPluginConverted by Don HO, which is part of the Notepad++ source code.
 //
@@ -258,11 +260,10 @@ void getCmdsFromConf(const TCHAR* confPathVal, Param& paramVal)
     ::GetPrivateProfileSectionNames(cmdNames, MAX_PATH, confPathVal);
 	TCHAR* pFn = cmdNames; // first section name
 
+    // Parse 'commentTag'
     paramVal.commentTag.clear();
-
     TCHAR valueBuffer[MAX_PATH] = { 0 };
-    const DWORD chars = ::GetPrivateProfileString(pFn, commentTag, TEXT(""), valueBuffer, MAX_PATH, confPathVal);
-
+    const DWORD chars = ::GetPrivateProfileString(pFn, commentTagName, TEXT(""), valueBuffer, MAX_PATH, confPathVal);
     if (chars > 0) {
 #ifdef UNICODE
         // wchar_t* to UTF-8 std::string
@@ -284,6 +285,14 @@ void getCmdsFromConf(const TCHAR* confPathVal, Param& paramVal)
     {
 		paramVal.commentTag = std::string(); // default to empty string if not found
     }
+    // Parse 'showInfoMessages'
+    int val = GetPrivateProfileInt(pFn, showInfoMessagesName, 1, confPathVal);
+	paramVal.showInfoMessages = val;
+
+    // Parse 'omitDuplicateComments'
+    val = GetPrivateProfileInt(pFn, omitDuplicateCommentsName, 1, confPathVal);
+    paramVal.omitDuplicateComments = val;
+
 
 }
 
@@ -300,11 +309,17 @@ void loadConfFile()
     confPath += pluginConfName;
 
     const char confContent[] = "\
-; This section contains the configurable parameters \n\
+; This section contains the configurable parameters.\n\
 ; If you modify directly this file, please restart your Notepad++ to take effect.\n\
-; * commentTag: Comment Identifier. Leave it empty to not consider comments\n\
+;\n\
+; *            commentTag: Comment Identifier. Leave it empty to ignore comments.\n\
+; *      showInfoMessages: Set to '1' to show info messages from the plugin. Set to '0' to hide them.\n\
+; * omitDuplicateComments: Set to '1' to omit any duplicate comments. Set to '0' to include them.\n\
+;\n\
 [config]\n\
 commentTag=//\n\
+showInfoMessages=1\n\
+omitDuplicateComments=1\n\
 \n";
 
     if (!::PathFileExists(confPath.c_str()))
@@ -468,6 +483,7 @@ void splitItemAndComment(const std::string& item, std::string& content, std::str
             content = item.substr(0, commentPos);
             content = trimRight(content);
             comment = item.substr(commentPos);
+			comment = trimRight(comment);
             atLeastOneCommentTagFound = true;
         }
         else {
@@ -509,8 +525,11 @@ void compareLists()
         if (stats.displayItem.empty())
             stats.displayItem = content;
         ++stats.appearancesInList1;
-        if (!comment.empty()) {
-            stats.comments.push_back(comment);
+		if (!comment.empty()) {
+			bool commentExists = false;
+			commentExists = std::find(stats.comments.begin(), stats.comments.end(), comment) != stats.comments.end();
+			if (!commentExists || param.omitDuplicateComments == 0)
+                stats.comments.push_back(comment);
         }
 		list1_withoutComments.push_back(content);
     }
@@ -524,7 +543,10 @@ void compareLists()
             stats.displayItem = content;
         ++stats.appearancesInList2;
         if (!comment.empty()) {
-            stats.comments.push_back(comment);
+            bool commentExists = false;
+            commentExists = std::find(stats.comments.begin(), stats.comments.end(), comment) != stats.comments.end();
+            if (!commentExists || param.omitDuplicateComments == 0)
+                stats.comments.push_back(comment);
         }
         list2_withoutComments.push_back(content);
     }
@@ -573,9 +595,11 @@ void compareLists()
 
     writeTextIntoCurrentScintilla(sci, newLine); //Empty line
 
-    if (atLeastOneCommentTagFound == true) {
-        writeTextIntoCurrentScintilla(sci, "- Info: Content after \"" + param.commentTag + "\"" + " is treated as a comment and is not included in the cross-check validations." + newLine + 
-        "        Plugins > NppCrossCheck > Edit Configuration File"); // Info line about comment tag
+    if (atLeastOneCommentTagFound == true && param.showInfoMessages != 0) {
+        writeTextIntoCurrentScintilla(sci,"-------------------------------------------------------------------------------------------------------" + newLine \
+            + "[Info]: Content after \"" + param.commentTag + "\"" + " is treated as a comment and is not included in the cross-check validations." + newLine \
+            + "        Go to [Plugins > NppCrossCheck > Edit Configuration File] to configure this functionality." + newLine \
+            + "-------------------------------------------------------------------------------------------------------"); // Info line about comment tag
     }
     writeTextIntoCurrentScintilla(sci, formatSectionHeaderCommon(listCommon.size()));
     writeTextArrayIntoCurrentScintilla_lineByLine(sci, listCommon, false);
