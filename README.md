@@ -89,6 +89,50 @@ Hong Kong
   1   Sydney
 ```
 
+## Using Comments
+
+A new feature has been added that allows users to add comments to multiple lines. These comments are ignored during the comparison process.
+
+By default, use `//` to add comments. The comment delimiter can be configured by going to:
+
+**Plugins → NppCrossCheck → Edit Configuration File**
+
+See the following example:
+
+```text
+Belgium
+Spain       // this is a comment
+Austria
+
+Spain
+Canada
+United States
+
+
+=====================
+     COMMON (1)
+=====================
+ L1  L2
+---------
+  1   1   Spain // this is a comment
+
+=====================
+   LIST 1 ONLY (2)
+=====================
+  #
+-----
+  1   Austria
+  1   Belgium
+
+=====================
+   LIST 2 ONLY (2)
+=====================
+  #
+-----
+  1   Canada
+  1   United States
+```
+
 ## Notes
 * The output is appended to the end of the original document.
 * Comparisons are case-insensitive.
@@ -108,21 +152,3 @@ Intrucciones (Español):
 1. En la barra de menús, ve a _Complementos_ → _Administrar Complementos..._
 2. Busca y selecciona "NppCrossCheck"
 3. Instalar
-
-### Manual Installation (on a Npp portable version)
-
-1. Download the `NppCrossCheck_XYZ.zip` file from the latest release:  
-   https://github.com/pablo-code14/NppCrossCheck/releases
-
-   *Where `XYZ` indicates your system architecture: `x64`, `x86`, or `ARM64`.*
-
-2. Close Notepad++ if it is running.
-
-3. Create an `NppCrossCheck` folder in Notepad++'s plugins directory  
-   (typically `C:\Program Files\Notepad++\Plugins`).
-
-4. Extract the downloaded file into the new folder:  
-   `.\Plugins\NppCrossCheck\NppCrossCheck.dll`
-
-5. Start Notepad++ again and run the plugin.
-   `Plugins -> NppCrossCheck` or press `ALT+L`
