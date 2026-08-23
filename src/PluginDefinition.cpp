@@ -1,4 +1,4 @@
-﻿//this file is part of notepad++
+﻿//thisfileispartofnotepad++
 //Copyright (C)2022 Don HO <don.h@free.fr>
 //
 //This program is free software; you can redistribute it and/or
@@ -18,6 +18,7 @@
 #include "PluginDefinition.h"
 #include "menuCmdID.h"
 #include "Scintilla.h"
+#include "Version.h"
 
 #include <algorithm>
 #include <cctype>
@@ -28,9 +29,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <Shlwapi.h>
 
 std::string newLine = "\r\n";
-
 //
 // The plugin data that Notepad++ needs
 //
@@ -41,10 +42,16 @@ FuncItem funcItem[nbFunc];
 //
 NppData nppData;
 
+Param param;
+typedef std::basic_string<TCHAR> generic_string;
+generic_string confPath;
+bool atLeastOneCommentTagFound = false;
+
 namespace {
 
 struct ItemStats {
     std::string displayItem;
+    std::vector<std::string> comments;
     int appearancesInList1 = 0;
     int appearancesInList2 = 0;
 };
@@ -55,6 +62,18 @@ std::string trimRight(std::string s)
         const char ch = s.back();
         if (ch == '\0' || ch == '\r' || ch == '\n' || ch == ' ' || ch == '\t')
             s.pop_back();
+        else
+            break;
+    }
+    return s;
+}
+
+std::string trimLeft(std::string s)
+{
+    while (!s.empty()) {
+        const char ch = s.front();
+        if (ch == ' ' || ch == '\t')
+            s.erase(s.begin());
         else
             break;
     }
@@ -88,22 +107,34 @@ bool lessIgnoreCase(const std::string& a, const std::string& b)
     return a.size() < b.size();
 }
 
-std::string formatOneCountLine(int count, const std::string& item)
+std::string formatOneCountLine(int count, const std::string& item, std::vector<std::string> comments)
 {
     std::ostringstream oss;
+
+	std::string commentStr;
+	for (const std::string& comment : comments) {
+        commentStr += " " + comment;
+    }
+
     oss << "";
     if (count == 1) {
-        oss << "  " << std::setw(1) << std::setfill('0') << count << "   " << item;
+        oss << "  " << std::setw(1) << std::setfill('0') << count << "   " << item << commentStr;
     }
     else {
-        oss << " " << std::setw(2) << std::setfill('0') << count << "   " << item;
+        oss << " " << std::setw(2) << std::setfill('0') << count << "   " << item << commentStr;
     }
     return oss.str();
 }
 
-std::string formatTwoCountLine(int count1, int count2, const std::string& item)
+std::string formatTwoCountLine(int count1, int count2, const std::string& item, std::vector<std::string> comments)
 {
     std::ostringstream oss;
+
+    std::string commentStr;
+    for (const std::string& comment : comments) {
+        commentStr += " " + comment;
+    }
+
     oss << "";
     if (count1 == 1) {
         oss << "  " << std::setw(1) << std::setfill('0') << count1;
@@ -117,14 +148,14 @@ std::string formatTwoCountLine(int count1, int count2, const std::string& item)
     else {
         oss << "  " << std::setw(2) << std::setfill('0') << count2;
     }
-    oss << "   " << item;
+    oss << "   " << item << commentStr;
     return oss.str();
 }
 
 std::string formatSectionHeaderCommon(size_t count)
 {
     std::ostringstream oss;
-    oss << "\r\n\r\n=====================\r\n"
+    oss << "\r\n=====================\r\n"
         << "     COMMON (" << count << ')'
         << "\r\n====================="
         << "\r\n L1  L2"
@@ -135,7 +166,7 @@ std::string formatSectionHeaderCommon(size_t count)
 std::string formatSectionHeaderSingle(const std::string& title, size_t count)
 {
     std::ostringstream oss;
-    oss << "\r\n\r\n=====================\r\n"
+    oss << "\r\n=====================\r\n"
         << title << " (" << count << ')'
         << "\r\n====================="
         << "\r\n  #"
@@ -179,6 +210,9 @@ void commandMenuInit()
     shKey->_key = 0x4C; // VK_L
 
     setCommand(0, TEXT("CrossCheck"), compareLists, shKey, false);
+    setCommand(1, TEXT("---"), NULL, NULL, false);
+    setCommand(2, TEXT("Edit Configuration File"), editConf, NULL, false);
+    setCommand(3, TEXT("About"), about, NULL, false);
 }
 
 //
@@ -211,6 +245,125 @@ bool setCommand(size_t index, TCHAR* cmdName, PFUNCPLUGINCMD pFunc, ShortcutKey*
 //----------------------------------------------//
 //--         ASSOCIATED FUNCTIONS             --//
 //----------------------------------------------//
+const TCHAR* pluginConfName = TEXT("NppCrossCheck.ini");
+const TCHAR* ConfigSectionName = TEXT("config");
+const TCHAR* commentTagName = TEXT("commentTag");
+const TCHAR* showInfoMessagesName = TEXT("showInfoMessages");
+const TCHAR* omitDuplicateCommentsName = TEXT("omitDuplicateComments");
+//
+// This function is a modified copy of NppPluginConverted by Don HO, which is part of the Notepad++ source code.
+//
+void getCmdsFromConf(const TCHAR* confPathVal, Param& paramVal)
+{
+	// Get the section names from the configuration file
+    TCHAR cmdNames[MAX_PATH];
+    ::GetPrivateProfileSectionNames(cmdNames, MAX_PATH, confPathVal);
+	TCHAR* pFn = cmdNames; // first section name
+
+    // Parse 'commentTag'
+    paramVal.commentTag.clear();
+    TCHAR valueBuffer[MAX_PATH] = { 0 };
+    const DWORD chars = ::GetPrivateProfileString(pFn, commentTagName, TEXT(""), valueBuffer, MAX_PATH, confPathVal);
+    if (chars > 0) {
+#ifdef UNICODE
+        // wchar_t* to UTF-8 std::string
+        int required = WideCharToMultiByte(CP_UTF8, 0, valueBuffer, -1, NULL, 0, NULL, NULL);
+        if (required > 0) {
+            std::string tmp;
+            tmp.resize(static_cast<size_t>(required));
+            WideCharToMultiByte(CP_UTF8, 0, valueBuffer, -1, &tmp[0], required, NULL, NULL);
+			// delete the last null terminator if present
+            if (!tmp.empty() && tmp.back() == '\0') tmp.pop_back();
+            paramVal.commentTag = tmp;
+        }
+#else
+        // ANSI build: valueBuffer is already char*
+        paramVal.commentTag = std::string(valueBuffer);
+#endif
+    }
+    else
+    {
+		paramVal.commentTag = std::string(); // default to empty string if not found
+    }
+    // Parse 'showInfoMessages'
+    int val = GetPrivateProfileInt(pFn, showInfoMessagesName, 1, confPathVal);
+	paramVal.showInfoMessages = val;
+
+    // Parse 'omitDuplicateComments'
+    val = GetPrivateProfileInt(pFn, omitDuplicateCommentsName, 1, confPathVal);
+    paramVal.omitDuplicateComments = val;
+
+
+}
+
+//
+// This function is a modified copy of NppPluginConverted by Don HO, which is part of the Notepad++ source code.
+//
+// // if conf file does not exist, then create it and load it.
+void loadConfFile()
+{
+    TCHAR confDir[MAX_PATH];
+    ::SendMessage(nppData._nppHandle, NPPM_GETPLUGINSCONFIGDIR, MAX_PATH, (LPARAM)confDir);
+    confPath = confDir;
+    confPath += TEXT("\\");
+    confPath += pluginConfName;
+
+    const char confContent[] = "\
+; This section contains the configurable parameters.\n\
+; If you modify directly this file, please restart your Notepad++ to take effect.\n\
+;\n\
+; *            commentTag: Comment Identifier. Leave it empty to ignore comments.\n\
+; *      showInfoMessages: Set to '1' to show info messages from the plugin. Set to '0' to hide them.\n\
+; * omitDuplicateComments: Set to '1' to omit any duplicate comments. Set to '0' to include them.\n\
+;\n\
+[config]\n\
+commentTag=//\n\
+showInfoMessages=1\n\
+omitDuplicateComments=1\n\
+\n";
+
+    if (!::PathFileExists(confPath.c_str()))
+    {
+        FILE* f = generic_fopen(confPath.c_str(), TEXT("w"));
+        if (f)
+        {
+            fwrite(confContent, sizeof(confContent[0]), strlen(confContent), f);
+            fflush(f);
+            fclose(f);
+        }
+        /*
+        else
+        {
+            generic_string msg = confPath;
+            msg += TEXT(" is absent, and this file cannot be create.");
+            ::MessageBox(nppData._nppHandle, msg.c_str(), TEXT("Not present"), MB_OK);
+        }
+        */
+    }
+    getCmdsFromConf(confPath.c_str(), param);
+}
+
+void about()
+{
+    generic_string aboutMsg = TEXT("Version: ");
+    aboutMsg += TEXT(VERSION_VALUE);
+    aboutMsg += TEXT("\r\r");
+    aboutMsg += TEXT("License: GPL\r\r");
+    aboutMsg += TEXT("Author: Pablo Lopez <pablo-code14@hotmail.com>\r");
+    ::MessageBox(nppData._nppHandle, aboutMsg.c_str(), TEXT("NppCrossCheck"), MB_OK);
+}
+
+void editConf()
+{
+    if (!::PathFileExists(confPath.c_str()))
+    {
+        generic_string msg = confPath + TEXT(" is not present.\rPlease create this file manually.");
+        ::MessageBox(nppData._nppHandle, msg.c_str(), TEXT("Configuration file is absent"), MB_OK);
+        return;
+    }
+    ::SendMessage(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)confPath.c_str());
+}
+
 void showDebugMessage_str(std::string str)
 {
     const int wlen = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, NULL, 0);
@@ -265,6 +418,7 @@ void writeFileContentIntoCurrentScintilla_lineByLine(HWND scintilla, const std::
     ::SendMessage(scintilla, SCI_ENDUNDOACTION, 0, 0);
 }
 
+
 void writeTextIntoCurrentScintilla(HWND scintilla, const std::string& text)
 {
     const std::string textWithNewLine = text + newLine;
@@ -303,6 +457,7 @@ std::vector<std::string> readNonEmptyBlock(HWND sci, size_t& line_no, size_t lin
     while (line_no < lineCount) {
         readLine(sci, line_no, line);
         line = trimRight(line);
+        line = trimLeft(line);
         if (!line.empty())
             break;
         ++line_no;
@@ -311,6 +466,7 @@ std::vector<std::string> readNonEmptyBlock(HWND sci, size_t& line_no, size_t lin
     while (line_no < lineCount) {
         readLine(sci, line_no, line);
         line = trimRight(line);
+        line = trimLeft(line);
         if (line.empty())
             break;
         lines.push_back(line);
@@ -320,50 +476,96 @@ std::vector<std::string> readNonEmptyBlock(HWND sci, size_t& line_no, size_t lin
     return lines;
 }
 
+void splitItemAndComment(const std::string& item, std::string& content, std::string& comment) {
+    if (!param.commentTag.empty()) {
+        std::size_t commentPos = item.find(param.commentTag);
+        if (commentPos != std::string::npos) {
+            content = item.substr(0, commentPos);
+            content = trimRight(content);
+            comment = item.substr(commentPos);
+			comment = trimRight(comment);
+            atLeastOneCommentTagFound = true;
+        }
+        else {
+            content = item;
+			comment = std::string();
+        }
+    }
+    else {
+        content = item;
+        comment = std::string();
+	}
+}
+
 void compareLists()
 {
     HWND sci = getCurrentScintilla();
     const size_t lineCount = static_cast<size_t>(::SendMessage(sci, SCI_GETLINECOUNT, 0, 0));
     size_t line_no = 0;
 
-    // Build the lists deined by the user
+    atLeastOneCommentTagFound = false;
+
+    // Build the lists defined by the user
     const std::vector<std::string> list1 = readNonEmptyBlock(sci, line_no, lineCount);
     const std::vector<std::string> list2 = readNonEmptyBlock(sci, line_no, lineCount);
-
-	// Sort the lists
-    const std::vector<std::string> list1Sorted = sortArray(list1);
-    const std::vector<std::string> list2Sorted = sortArray(list2);
 
 	//  Build a map of all items with their stats (number of appearances in each list) //
     std::unordered_map<std::string, ItemStats> itemsTable;
     itemsTable.reserve(list1.size() + list2.size());
 
+    std::vector<std::string> list1_withoutComments;
+    std::vector<std::string> list2_withoutComments;
+
 	//  - Add the items from list 1
     for (const std::string& item : list1) {
-		ItemStats& stats = itemsTable[toLowerCopy(item)]; // this will default construct the stats if the item is not already in the map
+        std::string content;
+        std::string comment;
+        splitItemAndComment(item, content, comment);
+        ItemStats& stats = itemsTable[toLowerCopy(content)]; // this will default construct the stats if the item is not already in the map
         if (stats.displayItem.empty())
-            stats.displayItem = item;
+            stats.displayItem = content;
         ++stats.appearancesInList1;
+		if (!comment.empty()) {
+			bool commentExists = false;
+			commentExists = std::find(stats.comments.begin(), stats.comments.end(), comment) != stats.comments.end();
+			if (!commentExists || param.omitDuplicateComments == 0)
+                stats.comments.push_back(comment);
+        }
+		list1_withoutComments.push_back(content);
     }
     //  - Add the items from list 2
     for (const std::string& item : list2) {
-		ItemStats& stats = itemsTable[toLowerCopy(item)]; // this will default construct the stats if the item is not already in the map
+        std::string content;
+        std::string comment;
+        splitItemAndComment(item, content, comment);
+		ItemStats& stats = itemsTable[toLowerCopy(content)]; // this will default construct the stats if the item is not already in the map
         if (stats.displayItem.empty())
-            stats.displayItem = item;
+            stats.displayItem = content;
         ++stats.appearancesInList2;
+        if (!comment.empty()) {
+            bool commentExists = false;
+            commentExists = std::find(stats.comments.begin(), stats.comments.end(), comment) != stats.comments.end();
+            if (!commentExists || param.omitDuplicateComments == 0)
+                stats.comments.push_back(comment);
+        }
+        list2_withoutComments.push_back(content);
     }
+
+    // Sort the lists
+    const std::vector<std::string> list1ItemsSorted = sortArray(list1_withoutComments);
+    const std::vector<std::string> list2ItemsSorted = sortArray(list2_withoutComments);
 
     std::vector<std::string> orderedKeys;
     orderedKeys.reserve(itemsTable.size());
     std::unordered_set<std::string> seenKeys;
     seenKeys.reserve(itemsTable.size());
 
-    for (const std::string& item : list1Sorted) {
+    for (const std::string& item : list1ItemsSorted) {
         const std::string key = toLowerCopy(item);
         if (seenKeys.insert(key).second)
             orderedKeys.push_back(key);
     }
-    for (const std::string& item : list2Sorted) {
+    for (const std::string& item : list2ItemsSorted) {
         const std::string key = toLowerCopy(item);
         if (seenKeys.insert(key).second)
             orderedKeys.push_back(key);
@@ -381,15 +583,24 @@ void compareLists()
         const ItemStats& stats = itemsTable.at(key);
 
         if (stats.appearancesInList1 > 0 && stats.appearancesInList2 == 0)
-            list1Only.push_back(formatOneCountLine(stats.appearancesInList1, stats.displayItem));
+            list1Only.push_back(formatOneCountLine(stats.appearancesInList1, stats.displayItem, stats.comments));
 
         if (stats.appearancesInList2 > 0 && stats.appearancesInList1 == 0)
-            list2Only.push_back(formatOneCountLine(stats.appearancesInList2, stats.displayItem));
+            list2Only.push_back(formatOneCountLine(stats.appearancesInList2, stats.displayItem, stats.comments));
 
         if (stats.appearancesInList1 > 0 && stats.appearancesInList2 > 0)
-            listCommon.push_back(formatTwoCountLine(stats.appearancesInList1, stats.appearancesInList2, stats.displayItem));
+            listCommon.push_back(formatTwoCountLine(stats.appearancesInList1, stats.appearancesInList2, stats.displayItem, stats.comments));
     }
 
+
+    writeTextIntoCurrentScintilla(sci, newLine); //Empty line
+
+    if (atLeastOneCommentTagFound == true && param.showInfoMessages != 0) {
+        writeTextIntoCurrentScintilla(sci,"-------------------------------------------------------------------------------------------------------" + newLine \
+            + "[Info]: Content after \"" + param.commentTag + "\"" + " is treated as a comment and is not included in the cross-check validations." + newLine \
+            + "        Go to [Plugins > NppCrossCheck > Edit Configuration File] to configure this functionality." + newLine \
+            + "-------------------------------------------------------------------------------------------------------"); // Info line about comment tag
+    }
     writeTextIntoCurrentScintilla(sci, formatSectionHeaderCommon(listCommon.size()));
     writeTextArrayIntoCurrentScintilla_lineByLine(sci, listCommon, false);
 
@@ -398,4 +609,6 @@ void compareLists()
 
     writeTextIntoCurrentScintilla(sci, formatSectionHeaderSingle("   LIST 2 ONLY", list2Only.size()));
     writeTextArrayIntoCurrentScintilla_lineByLine(sci, list2Only, false);
+
+    writeTextIntoCurrentScintilla(sci, ""); //Extra empty line at the end
 }
